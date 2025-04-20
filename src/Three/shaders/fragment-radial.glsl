@@ -2,6 +2,7 @@ precision mediump float;
 
 uniform float uTime;
 uniform vec2 uResolution;
+varying vec2 vUv;
 
 void main() {
     vec3 color;
@@ -10,7 +11,7 @@ void main() {
     vec2 fragCoord = gl_FragCoord.xy;
 
     for(int i = 0; i < 10; i++) {
-        vec2 uv, p = fragCoord / uResolution;
+        vec2 uv, p = vUv;
         uv = p;
         p -= 0.5;
         p.x *= uResolution.x / uResolution.y;

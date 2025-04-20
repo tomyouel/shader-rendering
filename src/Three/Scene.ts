@@ -14,20 +14,24 @@ import {
     AdditiveBlending,
     FrontSide,
     PlaneGeometry,
-    MeshBasicMaterial,
     DoubleSide,
-    TextureLoader,
+    SpotLight,
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import fragmentShader from './shaders/fragment.glsl';
 import vertexShader from './shaders/vertex.glsl';
 import cloudFragmentShader from './shaders/cloud-fragment.glsl';
+import fragmentRadial from './shaders/fragment-radial.glsl';
 import { GLTF, GLTFLoader } from 'three/examples/jsm/Addons.js';
 import { OutlinePass } from 'three/examples/jsm/Addons.js';
 import { EffectComposer } from 'three/examples/jsm/Addons.js';
 import { RenderPass } from 'three/examples/jsm/Addons.js';
+import { BokehPass } from 'three/examples/jsm/Addons.js';
 import noiseTexture from './textures/noisetexture.jpg';
 import { RenderPixelatedPass } from 'three/addons/postprocessing/RenderPixelatedPass.js';
+import maskFragmentShader from './shaders/guillocheShader/guilloche-fragment.glsl';
+import maskVertexShader from './shaders/guillocheShader/guilloche-vertex.glsl';
+import { SkeletonUtils } from 'three/examples/jsm/Addons.js';
 
 export default class ThreeScene {
     private scene: Scene;
@@ -37,6 +41,7 @@ export default class ThreeScene {
     private boardGroup: Group;
     private shaderMaterials: ShaderMaterial[];
     private composer: EffectComposer;
+    private canvas: HTMLCanvasElement;
 
     constructor(canvas: HTMLCanvasElement) {
         this.scene = new Scene();
@@ -46,6 +51,7 @@ export default class ThreeScene {
             0.1,
             1000,
         );
+        this.canvas = canvas;
         this.renderer = new WebGLRenderer({ antialias: true, canvas });
         this.renderer.setSize(window.innerWidth, window.innerHeight);
 
@@ -65,12 +71,20 @@ export default class ThreeScene {
 
         this.init();
 
-        const pixelPass = new RenderPixelatedPass(6, this.scene, this.camera);
+        //const pixelPass = new RenderPixelatedPass(6, this.scene, this.camera);
 
-        this.composer.addPass(pixelPass);
+        //this.composer.addPass(pixelPass);
 
-        //const renderPass = new RenderPass(this.scene, this.camera);
-        //this.composer.addPass(renderPass);
+        const renderPass = new RenderPass(this.scene, this.camera);
+        this.composer.addPass(renderPass);
+
+        /*const bokehPass = new BokehPass(this.scene, this.camera, {
+            focus: 3.0,
+            aperture: 0.05,
+            maxblur: 1.0
+        });
+    
+        this.composer.addPass(bokehPass);*/
 
         const ambientLight = new AmbientLight(0x404040, 1);
         this.scene.add(ambientLight);
@@ -87,43 +101,65 @@ export default class ThreeScene {
     private init(): void {
         this.camera.position.z = 2;
         this.scene.add(this.boardGroup);
-        this.drawModel();
-        this.drawCloudShader();
+        this.drawMaskShader();
+        //this.drawModel();
+        //this.drawCloudShader();
+    }
+
+    private drawMaskShader(): void {
+        const geo = new PlaneGeometry(2, 2);
+        const mat = new ShaderMaterial({
+            vertexShader: maskVertexShader,
+            fragmentShader: maskFragmentShader,
+            transparent: true,
+            uniforms: {
+                u_resolution: {
+                    value: new Vector2(this.canvas.width, this.canvas.height),
+                },
+                u_time: {
+                    value: 1.0,
+                },
+            },
+        });
+        const mesh = new Mesh(geo, mat);
+        this.shaderMaterials.push(mat);
+        this.scene.add(mesh);
     }
 
     private drawCloudShader(): void {
         const geo = new PlaneGeometry();
         const scale = 1;
         const shaderMat = new ShaderMaterial({
-            fragmentShader: cloudFragmentShader,
+            fragmentShader: fragmentRadial,
             vertexShader: vertexShader,
             side: DoubleSide,
             uniforms: {
-                //u_resolution: {value: new Vector2(window.innerWidth, window.innerHeight)},
-                //uTime: {value: 0.0},
-                //u_noiseTexture: {value: new TextureLoader().load('/noisetexture.jpg')},
+                uResolution: {
+                    value: new Vector2(window.innerWidth, window.innerHeight),
+                },
+                uTime: { value: 0.0 },
+                uGlowColor: { value: new Color(0xffc526) },
+                //uNoiseTexture: {value: new TextureLoader().load('/noisetexture.jpg')},
                 //u_cameraPos: {value: new Vector3(0, 1, 0)},
                 //u_lightDir: {value: new Vector3(0, 2, 0)}
             },
-            transparent: true
+            transparent: true,
+            blending: AdditiveBlending,
         });
-        const mat = new MeshBasicMaterial({
-            color: 'lightblue',
-            side: DoubleSide,
-            map: new TextureLoader().load('/noisetexture.jpg')
-        })
+
         this.shaderMaterials.push(shaderMat);
         const mesh = new Mesh(geo, shaderMat);
         mesh.scale.set(scale, scale, scale);
         mesh.position.set(0, 0.5, 0);
         this.scene.add(mesh);
-    };
+    }
 
     private drawModel(): void {
         const gltfLoader = new GLTFLoader();
         gltfLoader.load('/car.glb', (box) => {
             const { scene } = box as GLTF;
-            this.scene.add(scene);
+            const clonedModel = SkeletonUtils.clone(scene);
+            this.scene.add(clonedModel);
 
             scene.position.set(0, -1, 0);
 
@@ -181,9 +217,10 @@ export default class ThreeScene {
     }
 
     private update(): void {
-        this.shaderMaterials.forEach(
-            (shader) => shader.uniforms.uTime && (shader.uniforms.uTime.value += 0.01),
-        );
+        this.shaderMaterials.forEach((shader) => {
+            shader.uniforms.uTime && (shader.uniforms.uTime.value += 0.01);
+            shader.uniforms.u_time && (shader.uniforms.u_time.value += 0.01);
+        });
         this.orbitControls.update();
     }
 
